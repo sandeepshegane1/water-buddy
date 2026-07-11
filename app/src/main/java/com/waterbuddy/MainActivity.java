@@ -239,12 +239,19 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void requestPermission() {
+private void requestPermission() {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1);
         }
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.VIBRATE) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.VIBRATE}, 1);
+        }
+        // Exact alarms need a separate, user-granted "special app access" on Android 12+.
+        // From Android 14 onward it's OFF by default, so send the user to the system
+        // screen to turn it on. Without this, hourly reminders silently degrade to
+        // inexact timing instead of crashing (handled in WaterReminderScheduler).
+        if (!WaterReminderScheduler.canScheduleExactAlarms(this)) {
+            WaterReminderScheduler.requestExactAlarmPermission(this);
         }
     }
 
