@@ -20,7 +20,7 @@ public class MainActivity extends Activity {
   Button button(String x){ Button b=new Button(this);b.setText(x);b.setTextSize(17);b.setTextColor(Color.WHITE);b.setBackgroundColor(blue); b.setAllCaps(false); b.setPadding(10,12,10,12); return b; }
   void build(){
     ScrollView scroll=new ScrollView(this); page=new LinearLayout(this); page.setOrientation(LinearLayout.VERTICAL); page.setPadding(42,55,42,42); page.setBackgroundColor(Color.rgb(234,248,255)); scroll.addView(page); setContentView(scroll);
-    TextView title=label("💧 Water Buddy",30); title.setTextColor(blue); page.addView(title); page.addView(label("Your cheerful hydration companion",17));
+    TextView title=label("💧 Water Buddy",30); title.setTextColor(blue); page.addView(title); page.addView(latest.setOnClickListener(v -> { ReminderReceiver.showReminder(this); });bel("Your cheerful hydration companion",17));
     total=label("",25); total.setGravity(Gravity.CENTER); total.setPadding(5,45,5,35); page.addView(total);
     Button drink=button("I drank water  +1 glass"); page.addView(drink); drink.setOnClickListener(v->{ addGlass(); });
     message=label("",16); message.setGravity(Gravity.CENTER); page.addView(message);
@@ -28,7 +28,7 @@ public class MainActivity extends Activity {
     TextView st=label("Reminder settings",21);page.addView(st);
     voice=new Switch(this); voice.setText("🔊 Cute baby voice reminders"); voice.setTextSize(17); voice.setChecked(prefs.getBoolean("voice",true)); voice.setPadding(8,24,8,24); page.addView(voice); voice.setOnCheckedChangeListener((x,on)->{prefs.edit().putBoolean("voice",on).apply(); Toast.makeText(this,on?"Voice reminders turned on":"Voice reminders turned off",Toast.LENGTH_SHORT).show();});
     page.addView(label("Reminders appear every hour. You can turn the cute voice on or off here, or directly from a reminder notification.",15));
-    Button test=button("Test reminder"); page.addView(test); test.setOnClickListener(v->{ReminderReceiver.show(this);});
+    Button test=button("Test reminder"); page.addView(test); test.setOnClickListener(v -> { ReminderReceiver.showReminder(this); });
   }
   void addGlass(){String today=new SimpleDateFormat("yyyy-MM-dd",Locale.US).format(new Date()); if(!today.equals(prefs.getString("date","")))prefs.edit().putString("date",today).putInt("glasses",0).apply();prefs.edit().putInt("glasses",prefs.getInt("glasses",0)+1).apply();refresh();Toast.makeText(this,"Yay! Great sip! 💧",Toast.LENGTH_SHORT).show();}
   void refresh(){String today=new SimpleDateFormat("yyyy-MM-dd",Locale.US).format(new Date()); if(!today.equals(prefs.getString("date","")))prefs.edit().putString("date",today).putInt("glasses",0).apply(); int n=prefs.getInt("glasses",0);total.setText(n+" / 8 glasses today");message.setText(n>=8?"Amazing! Your water goal is complete! 🎉":"Keep going — your body says thank you!");}
