@@ -7,11 +7,13 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.speech.tts.TextToSpeech;
+import android.os.Build;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import java.util.Random;
 
 /**
- * Handles water reminder notifications with voice and actions
+ * Handles water reminder notifications with voice, vibration, and snooze functionality
  */
 public class ReminderReceiver extends BroadcastReceiver {
 
@@ -24,21 +26,21 @@ public class ReminderReceiver extends BroadcastReceiver {
             "Time for a water break! 💧",
             "Your body is calling for water!",
             "Keep calm and drink water! 🌊",
-            "Cheers! Time to refill your hydration!"
+            "Cheers! Time to refill your hydration!",
+            "Splash! Let's hydrate!",
+            "Sip, sip, hooray! Time to drink!"
     };
 
     @Override
     public void onReceive(Context context, Intent intent) {
         String action = intent.getAction();
-
-        SharedPreferences preferences =
-                context.getSharedPreferences("water", Context.MODE_PRIVATE);
+        SharedPreferences preferences = context.getSharedPreferences("water", Context.MODE_PRIVATE);
 
         if ("DRANK".equals(action)) {
             HydrationTracker.addGlass(context);
+            HistoryTracker.recordGlasses(context, HydrationTracker.getToday(), HydrationTracker.getGlassesToday(context));
 
-            NotificationManager manager =
-                    context.getSystemService(NotificationManager.class);
+            NotificationManager manager = context.getSystemService(NotificationManager.class);
             manager.cancel(7);
             return;
         }
@@ -50,8 +52,18 @@ public class ReminderReceiver extends BroadcastReceiver {
             return;
         }
 
+        if ("SNOOZE".equals(action)) {
+            int snoozeMinutes = ReminderPreferences.getSnoozeMinutes(context);
+            scheduleSnoozeReminder(context, snoozeMinutes);
+            NotificationManager manager = context.getSystemService(NotificationManager.class);
+            manager.cancel(7);
+            return;
+        }
+
         if ("REMIND".equals(action)) {
-            showReminder(context);
+            if (!ReminderPreferences.isInQuietHours(context)) {
+                showReminder(context);
+            }
         }
     }
 
@@ -68,8 +80,7 @@ public class ReminderReceiver extends BroadcastReceiver {
     }
 
     static void showReminder(Context context) {
-        SharedPreferences preferences =
-                context.getSharedPreferences("water", Context.MODE_PRIVATE);
+        SharedPreferences preferences = context.getSharedPreferences("water", Context.MODE_PRIVATE);
 
         boolean voiceOn = preferences.getBoolean("voice", true);
         String reminderText = REMINDERS[random.nextInt(REMINDERS.length)];
@@ -80,11 +91,19 @@ public class ReminderReceiver extends BroadcastReceiver {
                 .setContentText(reminderText)
                 .setPriority(Notification.PRIORITY_HIGH)
                 .setAutoCancel(true)
+                .setVibrate(new long[]{0, 250, 250, 250})
                 .addAction(
                         new Notification.Action.Builder(
                                 null,
                                 "I drank water ✓",
                                 actionIntent(context, "DRANK", 11)
+                        ).build()
+                )
+                .addAction(
+                        new Notification.Action.Builder(
+                                null,
+                                "Snooze 15 min",
+                                actionIntent(context, "SNOOZE", 10)
                         ).build()
                 )
                 .addAction(
@@ -96,9 +115,19 @@ public class ReminderReceiver extends BroadcastReceiver {
                 )
                 .build();
 
-        NotificationManager manager =
-                context.getSystemService(NotificationManager.class);
+        NotificationManager manager = context.getSystemService(NotificationManager.class);
         manager.notify(7, notification);
+
+        if (ReminderPreferences.isVibrationEnabled(context)) {
+            Vibrator vibrator = context.getSystemService(Vibrator.class);
+            if (vibrator != null && vibrator.hasVibrator()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    vibrator.vibrate(VibrationEffect.createOneShot(300, VibrationEffect.DEFAULT_AMPLITUDE));
+                } else {
+                    vibrator.vibrate(300);
+                }
+            }
+        }
 
         if (voiceOn) {
             speakReminder(context, reminderText);
@@ -106,21 +135,36 @@ public class ReminderReceiver extends BroadcastReceiver {
     }
 
     private static void speakReminder(Context context, String text) {
-        final TextToSpeech[] speech = new TextToSpeech[1];
+        VoiceManager.init(context, () -> VoiceManager.speak(text));
+    }
 
-        speech[0] = new TextToSpeech(context, status -> {
-            TextToSpeech tts = speech[0];
+    private static void scheduleSnoozeReminder(Context context, int minutes) {
+        android.app.AlarmManager alarmManager = context.getSystemService(android.app.AlarmManager.class);
+        Intent intent = new Intent(context, ReminderReceiver.class);
+        intent.setAction("REMIND");
 
-            if (status == TextToSpeech.SUCCESS && tts != null) {
-                tts.setPitch(1.65f);
-                tts.setSpeechRate(0.9f);
-                tts.speak(
-                        text,
-                        TextToSpeech.QUEUE_FLUSH,
-                        null,
-                        "water-reminder"
-                );
-            }
-        });
+        PendingIntent pendingIntent = PendingIntent.getBroadcast(
+                context,
+                9999,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
+        java.util.Calendar calendar = java.util.Calendar.getInstance();
+        calendar.add(java.util.Calendar.MINUTE, minutes);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            alarmManager.setExactAndAllowWhileIdle(
+                    android.app.AlarmManager.RTC_WAKEUP,
+                    calendar.getTimeInMillis(),
+                    pendingIntent
+            );
+        } else {
+            alarmManager.setAndAllowWhileIdle(
+                    android.app.AlarmManager.RTC_WAKEUP,
+                    calendar.getTimeInMillis(),
+                    pendingIntent
+            );
+        }
     }
 }

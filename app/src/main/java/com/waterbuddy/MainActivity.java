@@ -5,7 +5,6 @@ import android.app.*;
 import android.content.*;
 import android.content.pm.PackageManager;
 import android.os.*;
-import android.provider.Settings;
 import android.view.*;
 import android.widget.*;
 import android.graphics.Color;
@@ -17,7 +16,7 @@ import java.util.*;
  */
 public class MainActivity extends Activity {
     SharedPreferences prefs;
-    TextView total, message, streakDisplay, progressDisplay;
+    TextView total, message, streakDisplay, progressDisplay, weeklyStatsDisplay;
     Switch voice;
     ProgressBar dailyProgress;
     LinearLayout page;
@@ -104,10 +103,26 @@ public class MainActivity extends Activity {
         Space s2 = new Space(this);
         page.addView(s2, new LinearLayout.LayoutParams(1, 24));
 
+        LinearLayout weeklyCard = new LinearLayout(this);
+        weeklyCard.setOrientation(LinearLayout.VERTICAL);
+        weeklyCard.setPadding(16, 16, 16, 16);
+        weeklyCard.setBackgroundColor(Color.rgb(200, 230, 250));
+        weeklyCard.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        weeklyStatsDisplay = label("📊 Weekly Average: -- glasses/day", 16);
+        weeklyStatsDisplay.setGravity(Gravity.CENTER);
+        weeklyCard.addView(weeklyStatsDisplay);
+
+        page.addView(weeklyCard);
+
+        Space s2b = new Space(this);
+        page.addView(s2b, new LinearLayout.LayoutParams(1, 12));
+
         Button drink = button("🥤 I drank water (+1)");
         page.addView(drink);
         drink.setOnClickListener(v -> {
             HydrationTracker.addGlass(this);
+            HistoryTracker.recordGlasses(this, HydrationTracker.getToday(), HydrationTracker.getGlassesToday(this));
             refresh();
             Toast.makeText(this, "Great job! 💪 Keep hydrating!", Toast.LENGTH_SHORT).show();
         });
@@ -164,6 +179,13 @@ public class MainActivity extends Activity {
             startActivity(intent);
         });
 
+        Button advanced = button("⚡ Advanced Settings");
+        page.addView(advanced);
+        advanced.setOnClickListener(v -> {
+            Intent intent = new Intent(this, AdvancedSettingsActivity.class);
+            startActivity(intent);
+        });
+
         Button stats = button("📊 Statistics");
         page.addView(stats);
         stats.setOnClickListener(v -> {
@@ -192,6 +214,9 @@ public class MainActivity extends Activity {
         dailyProgress.setProgress(progress);
         progressDisplay.setText(progress + "% complete");
 
+        double weeklyAvg = HistoryTracker.getWeeklyAverage(this);
+        weeklyStatsDisplay.setText(String.format("📊 Weekly Average: %.1f glasses/day", weeklyAvg));
+
         streakDisplay.setText("🔥 Streak: " + streak + " days");
 
         if (goalReached) {
@@ -208,6 +233,7 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 26) {
             NotificationChannel c = new NotificationChannel("water", "Water reminders", NotificationManager.IMPORTANCE_HIGH);
             c.setDescription("Friendly hydration reminders");
+            c.enableVibration(true);
             NotificationManager manager = getSystemService(NotificationManager.class);
             manager.createNotificationChannel(c);
         }
@@ -216,6 +242,9 @@ public class MainActivity extends Activity {
     private void requestPermission() {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1);
+        }
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.VIBRATE) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.VIBRATE}, 1);
         }
     }
 
