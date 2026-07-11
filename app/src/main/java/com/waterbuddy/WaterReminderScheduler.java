@@ -5,7 +5,9 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.Uri;
 import android.os.Build;
+import android.provider.Settings;
 import java.util.Calendar;
 
 /**
@@ -44,19 +46,49 @@ public class WaterReminderScheduler {
                     PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
             );
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && alarmManager.canScheduleExactAlarms()) {
+                // Only allowed once the user has granted "Alarms & reminders" access.
+                // On Android 14+ this permission is OFF by default, so we must check
+                // canScheduleExactAlarms() first or the app crashes with a SecurityException.
                 alarmManager.setExactAndAllowWhileIdle(
                         AlarmManager.RTC_WAKEUP,
                         calendar.getTimeInMillis(),
                         pendingIntent
                 );
             } else {
+                // Fallback: inexact alarm, still works, just may fire a little late.
                 alarmManager.setAndAllowWhileIdle(
                         AlarmManager.RTC_WAKEUP,
                         calendar.getTimeInMillis(),
                         pendingIntent
                 );
             }
+        }
+    }
+
+    /**
+     * Returns true if this app is currently allowed to schedule exact alarms.
+     * Always true below Android 12 (S); must be checked on S and above.
+     */
+    public static boolean canScheduleExactAlarms(Context context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return true;
+        }
+        AlarmManager alarmManager = context.getSystemService(AlarmManager.class);
+        return alarmManager != null && alarmManager.canScheduleExactAlarms();
+    }
+
+    /**
+     * Sends the user to the system "Alarms & reminders" screen so they can grant
+     * exact-alarm access. Only needed on Android 12+ (required in practice from
+     * Android 14 onward, since that's when the permission stopped being auto-granted).
+     */
+    public static void requestExactAlarmPermission(Context context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            Intent intent = new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM);
+            intent.setData(Uri.parse("package:" + context.getPackageName()));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(intent);
         }
     }
 
