@@ -10,6 +10,7 @@ import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import android.speech.tts.TextToSpeech;
 import java.util.Random;
 
 /**
@@ -19,6 +20,7 @@ public class ReminderReceiver extends BroadcastReceiver {
 
     static final String CHANNEL = "water";
     private static final Random random = new Random();
+    private static TextToSpeech tts;
 
     private static final String[] REMINDERS = {
             "Drink water, cutie! It is sip sip time!",
@@ -33,37 +35,49 @@ public class ReminderReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
+        if (intent == null || intent.getAction() == null) {
+            return;
+        }
+
         String action = intent.getAction();
         SharedPreferences preferences = context.getSharedPreferences("water", Context.MODE_PRIVATE);
 
-        if ("DRANK".equals(action)) {
-            HydrationTracker.addGlass(context);
-            HistoryTracker.recordGlasses(context, HydrationTracker.getToday(), HydrationTracker.getGlassesToday(context));
+        try {
+            if ("DRANK".equals(action)) {
+                HydrationTracker.addGlass(context);
+                HistoryTracker.recordGlasses(context, HydrationTracker.getToday(), HydrationTracker.getGlassesToday(context));
 
-            NotificationManager manager = context.getSystemService(NotificationManager.class);
-            manager.cancel(7);
-            return;
-        }
-
-        if ("VOICE".equals(action)) {
-            boolean voiceOn = !preferences.getBoolean("voice", true);
-            preferences.edit().putBoolean("voice", voiceOn).apply();
-            showReminder(context);
-            return;
-        }
-
-        if ("SNOOZE".equals(action)) {
-            int snoozeMinutes = ReminderPreferences.getSnoozeMinutes(context);
-            scheduleSnoozeReminder(context, snoozeMinutes);
-            NotificationManager manager = context.getSystemService(NotificationManager.class);
-            manager.cancel(7);
-            return;
-        }
-
-        if ("REMIND".equals(action)) {
-            if (!ReminderPreferences.isInQuietHours(context)) {
-                showReminder(context);
+                NotificationManager manager = context.getSystemService(NotificationManager.class);
+                if (manager != null) {
+                    manager.cancel(7);
+                }
+                return;
             }
+
+            if ("VOICE".equals(action)) {
+                boolean voiceOn = !preferences.getBoolean("voice", true);
+                preferences.edit().putBoolean("voice", voiceOn).apply();
+                showReminder(context);
+                return;
+            }
+
+            if ("SNOOZE".equals(action)) {
+                int snoozeMinutes = ReminderPreferences.getSnoozeMinutes(context);
+                scheduleSnoozeReminder(context, snoozeMinutes);
+                NotificationManager manager = context.getSystemService(NotificationManager.class);
+                if (manager != null) {
+                    manager.cancel(7);
+                }
+                return;
+            }
+
+            if ("REMIND".equals(action)) {
+                if (!ReminderPreferences.isInQuietHours(context)) {
+                    showReminder(context);
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
@@ -80,45 +94,61 @@ public class ReminderReceiver extends BroadcastReceiver {
     }
 
     static void showReminder(Context context) {
-        SharedPreferences preferences = context.getSharedPreferences("water", Context.MODE_PRIVATE);
+        try {
+            SharedPreferences preferences = context.getSharedPreferences("water", Context.MODE_PRIVATE);
+            boolean voiceOn = preferences.getBoolean("voice", true);
+            String reminderText = REMINDERS[random.nextInt(REMINDERS.length)];
 
-        boolean voiceOn = preferences.getBoolean("voice", true);
-        String reminderText = REMINDERS[random.nextInt(REMINDERS.length)];
+            Notification notification = new Notification.Builder(context, CHANNEL)
+                    .setSmallIcon(android.R.drawable.ic_dialog_info)
+                    .setContentTitle("💧 Water Reminder")
+                    .setContentText(reminderText)
+                    .setPriority(Notification.PRIORITY_HIGH)
+                    .setAutoCancel(true)
+                    .addAction(
+                            new Notification.Action.Builder(
+                                    null,
+                                    "I drank water ✓",
+                                    actionIntent(context, "DRANK", 11)
+                            ).build()
+                    )
+                    .addAction(
+                            new Notification.Action.Builder(
+                                    null,
+                                    "Snooze 15 min",
+                                    actionIntent(context, "SNOOZE", 10)
+                            ).build()
+                    )
+                    .addAction(
+                            new Notification.Action.Builder(
+                                    null,
+                                    voiceOn ? "🔊 Voice: On" : "🔇 Voice: Off",
+                                    actionIntent(context, "VOICE", 12)
+                            ).build()
+                    )
+                    .build();
 
-        Notification notification = new Notification.Builder(context, CHANNEL)
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle("💧 Water Reminder")
-                .setContentText(reminderText)
-                .setPriority(Notification.PRIORITY_HIGH)
-                .setAutoCancel(true)
-                .setVibrate(new long[]{0, 250, 250, 250})
-                .addAction(
-                        new Notification.Action.Builder(
-                                null,
-                                "I drank water ✓",
-                                actionIntent(context, "DRANK", 11)
-                        ).build()
-                )
-                .addAction(
-                        new Notification.Action.Builder(
-                                null,
-                                "Snooze 15 min",
-                                actionIntent(context, "SNOOZE", 10)
-                        ).build()
-                )
-                .addAction(
-                        new Notification.Action.Builder(
-                                null,
-                                voiceOn ? "🔊 Voice: On" : "🔇 Voice: Off",
-                                actionIntent(context, "VOICE", 12)
-                        ).build()
-                )
-                .build();
+            NotificationManager manager = context.getSystemService(NotificationManager.class);
+            if (manager != null) {
+                manager.notify(7, notification);
+            }
 
-        NotificationManager manager = context.getSystemService(NotificationManager.class);
-        manager.notify(7, notification);
+            // Vibrate
+            if (ReminderPreferences.isVibrationEnabled(context)) {
+                vibrateDevice(context);
+            }
 
-        if (ReminderPreferences.isVibrationEnabled(context)) {
+            // Speak
+            if (voiceOn) {
+                speakReminder(context, reminderText);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static void vibrateDevice(Context context) {
+        try {
             Vibrator vibrator = context.getSystemService(Vibrator.class);
             if (vibrator != null && vibrator.hasVibrator()) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -127,44 +157,67 @@ public class ReminderReceiver extends BroadcastReceiver {
                     vibrator.vibrate(300);
                 }
             }
-        }
-
-        if (voiceOn) {
-            speakReminder(context, reminderText);
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
     private static void speakReminder(Context context, String text) {
-        VoiceManager.init(context, () -> VoiceManager.speak(text));
+        try {
+            if (tts == null) {
+                tts = new TextToSpeech(context, status -> {
+                    if (status == TextToSpeech.SUCCESS) {
+                        if (tts != null) {
+                            tts.setPitch(1.65f);
+                            tts.setSpeechRate(0.85f);
+                            tts.speak(text, TextToSpeech.QUEUE_FLUSH, null);
+                        }
+                    }
+                });
+            } else {
+                if (tts != null) {
+                    tts.stop();
+                    tts.speak(text, TextToSpeech.QUEUE_FLUSH, null);
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private static void scheduleSnoozeReminder(Context context, int minutes) {
-        android.app.AlarmManager alarmManager = context.getSystemService(android.app.AlarmManager.class);
-        Intent intent = new Intent(context, ReminderReceiver.class);
-        intent.setAction("REMIND");
+        try {
+            android.app.AlarmManager alarmManager = context.getSystemService(android.app.AlarmManager.class);
+            if (alarmManager == null) return;
 
-        PendingIntent pendingIntent = PendingIntent.getBroadcast(
-                context,
-                9999,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-        );
+            Intent intent = new Intent(context, ReminderReceiver.class);
+            intent.setAction("REMIND");
 
-        java.util.Calendar calendar = java.util.Calendar.getInstance();
-        calendar.add(java.util.Calendar.MINUTE, minutes);
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            alarmManager.setExactAndAllowWhileIdle(
-                    android.app.AlarmManager.RTC_WAKEUP,
-                    calendar.getTimeInMillis(),
-                    pendingIntent
+            PendingIntent pendingIntent = PendingIntent.getBroadcast(
+                    context,
+                    9999,
+                    intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
             );
-        } else {
-            alarmManager.setAndAllowWhileIdle(
-                    android.app.AlarmManager.RTC_WAKEUP,
-                    calendar.getTimeInMillis(),
-                    pendingIntent
-            );
+
+            java.util.Calendar calendar = java.util.Calendar.getInstance();
+            calendar.add(java.util.Calendar.MINUTE, minutes);
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                alarmManager.setExactAndAllowWhileIdle(
+                        android.app.AlarmManager.RTC_WAKEUP,
+                        calendar.getTimeInMillis(),
+                        pendingIntent
+                );
+            } else {
+                alarmManager.setAndAllowWhileIdle(
+                        android.app.AlarmManager.RTC_WAKEUP,
+                        calendar.getTimeInMillis(),
+                        pendingIntent
+                );
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 }
